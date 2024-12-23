@@ -3,9 +3,8 @@ import img from "../../assets/account.jpg";
 import { useDispatch, useSelector } from "react-redux";
 import UserCartItemsContent from "@/components/shopping-view/cart-items-content";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { createNewOrder } from "@/store/shop/order-slice";
-import { Navigate } from "react-router-dom";
 import { useToast } from "@/components/ui/use-toast";
 
 function ShoppingCheckout() {
@@ -17,10 +16,9 @@ function ShoppingCheckout() {
   const dispatch = useDispatch();
   const { toast } = useToast();
 
-  console.log(currentSelectedAddress, "cartItems");
-
-  const totalCartAmount =
-    cartItems && cartItems.items && cartItems.items.length > 0
+  // حساب المجموع الكلي باستخدام useMemo
+  const totalCartAmount = useMemo(() => {
+    return cartItems && cartItems.items && cartItems.items.length > 0
       ? cartItems.items.reduce(
           (sum, currentItem) =>
             sum +
@@ -31,14 +29,15 @@ function ShoppingCheckout() {
           0
         )
       : 0;
+  }, [cartItems]);
 
-  function handleInitiatePaypalPayment() {
+  // معالجة الدفع عبر PayPal
+  const handleInitiatePaypalPayment = useCallback(() => {
     if (cartItems.length === 0) {
       toast({
         title: "Your cart is empty. Please add items to proceed",
         variant: "destructive",
       });
-
       return;
     }
     if (currentSelectedAddress === null) {
@@ -46,7 +45,6 @@ function ShoppingCheckout() {
         title: "Please select one address to proceed.",
         variant: "destructive",
       });
-
       return;
     }
 
@@ -82,14 +80,61 @@ function ShoppingCheckout() {
     };
 
     dispatch(createNewOrder(orderData)).then((data) => {
-      console.log(data, "sangam");
-      if (data?.payload?.success) {
-        setIsPaymemntStart(true);
-      } else {
-        setIsPaymemntStart(false);
-      }
+      setIsPaymemntStart(data?.payload?.success);
     });
-  }
+  }, [cartItems, currentSelectedAddress, dispatch, toast, user, totalCartAmount]);
+
+  // معالجة الدفع عبر البطاقات
+  const handleInitiateVisaPayment = useCallback(() => {
+    if (cartItems.length === 0 || currentSelectedAddress === null) {
+      toast({
+        title: cartItems.length === 0
+          ? "Your cart is empty. Please add items to proceed"
+          : "Please select one address to proceed.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const orderData = {
+      userId: user?.id,
+      cartId: cartItems?._id,
+      cartItems: cartItems.items.map((singleCartItem) => ({
+        productId: singleCartItem?.productId,
+        title: singleCartItem?.title,
+        image: singleCartItem?.image,
+        price:
+          singleCartItem?.salePrice > 0
+            ? singleCartItem?.salePrice
+            : singleCartItem?.price,
+        quantity: singleCartItem?.quantity,
+      })),
+      addressInfo: {
+        addressId: currentSelectedAddress?._id,
+        address: currentSelectedAddress?.address,
+        city: currentSelectedAddress?.city,
+        pincode: currentSelectedAddress?.pincode,
+        phone: currentSelectedAddress?.phone,
+        notes: currentSelectedAddress?.notes,
+      },
+      orderStatus: "pending",
+      paymentMethod: "online card",
+      paymentStatus: "pending",
+      totalAmount: totalCartAmount,
+      orderDate: new Date(),
+      orderUpdateDate: new Date(),
+      paymentId: "",
+      payerId: "",
+    };
+
+    dispatch(createNewOrder(orderData)).then((data) => {
+      setIsPaymemntStart(data?.payload?.success);
+    });
+    toast({
+      title: "Visa payment initiated successfully!",
+      variant: "success",
+    });
+  }, [cartItems, currentSelectedAddress, dispatch, toast, user, totalCartAmount]);
 
   if (approvalURL) {
     window.location.href = approvalURL;
@@ -108,7 +153,7 @@ function ShoppingCheckout() {
         <div className="flex flex-col gap-4">
           {cartItems && cartItems.items && cartItems.items.length > 0
             ? cartItems.items.map((item) => (
-                <UserCartItemsContent cartItem={item} />
+                <UserCartItemsContent key={item.productId} cartItem={item} />
               ))
             : null}
           <div className="mt-8 space-y-4">
@@ -118,10 +163,23 @@ function ShoppingCheckout() {
             </div>
           </div>
           <div className="mt-4 w-full">
-            <Button onClick={handleInitiatePaypalPayment} className="w-full">
+            <Button
+              onClick={handleInitiatePaypalPayment}
+              className="w-full flex items-center justify-center h-16"
+            >
+              <img src="/paypal-logo.png" alt="PayPal" className="h-6 w-15 mr-2" />
               {isPaymentStart
                 ? "Processing Paypal Payment..."
-                : "Checkout with Paypal"}
+                : "Pay with Paypal"}
+            </Button>
+            <Button
+              onClick={handleInitiateVisaPayment}
+              className="w-full mt-2 bg-blue-600 text-white flex items-center justify-center h-16"
+            >
+              <img src="/visa-logo.png" alt="Visa" className="h-6 w-22 mr-2" />
+              {isPaymentStart
+                ? "Processing Online Card Payment..."
+                : "Pay with Online Card"}
             </Button>
           </div>
         </div>
